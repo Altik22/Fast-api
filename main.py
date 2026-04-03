@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
 import json
 from typing import List, Dict, Optional
+import os
 
 
 app = FastAPI()
@@ -23,7 +24,7 @@ SUPABASE_KEY = "sb_publishable_mbz3m1lisF4tHcn1CrXJ6Q_S5Q9F-5W"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-GOOGLE_API_KEY = "AIzaSyANdg46Lc0jxb7-t_fXZKgz3uO3KXq7efo"
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel('gemini-3-flash-preview')
 
