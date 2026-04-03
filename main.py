@@ -1,8 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from supabase import create_client
-import google.generativeai as genai
 from fastapi.middleware.cors import CORSMiddleware
+import google.generativeai as genai
+import json
+from typing import List, Dict, Optional
+
 
 app = FastAPI()
 
@@ -17,12 +20,12 @@ app.add_middleware(
 # 🔑 ключи
 SUPABASE_URL = "https://poxydnxojhvbssxlnvrv.supabase.co"
 SUPABASE_KEY = "sb_publishable_mbz3m1lisF4tHcn1CrXJ6Q_S5Q9F-5W"
-GEMINI_KEY = "AIzaSyBu0Wp4sxXyUO_O1utvxNQ5nMd8TlzFlrs"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-pro")
+GOOGLE_API_KEY = "AIzaSyANdg46Lc0jxb7-t_fXZKgz3uO3KXq7efo"
+genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel('gemini-3-flash-preview')
 
 class UserData(BaseModel):
     name: str
@@ -395,3 +398,71 @@ async def get_district_details(district_id: str):
     if district:
         return district
     return {"error": "District not found"}
+
+
+@app.post("/api/v1/analyze/building")
+async def analyze_building(data: Dict):
+    """
+    Полнофункциональный анализ здания с использованием Gemini AI.
+    Принимает: name, lat, lng, floors, building_type, district_id
+    """
+    
+    # 1. Подготовка контекста для ИИ
+    # Мы передаем ИИ текущее состояние города, чтобы он "понимал" среду
+    context = {
+        "city_overall_stats": CITY_STATS,
+        "nearby_faults": SEISMIC_FAULTS,
+        "infrastructure_nodes": [m for m in MARKERS_MOCK if m['type'] in ['utility', 'school']]
+    }
+
+    # 2. Формирование промпта (System Instruction)
+    prompt = f"""
+    Ты — экспертный ИИ-аналитик градостроительства Алматы. Твоя задача — провести глубокий анализ нового строительного проекта.
+    
+    ДАННЫЕ ПРОЕКТА:
+    - Название: {data.get('name')}
+    - Координаты: {data.get('lat')}, {data.get('lng')}
+    - Этажность: {data.get('floors')}
+    - Тип: {data.get('building_type')}
+    - Район: {data.get('district_id')}
+    
+    КОНТЕКСТ ГОРОДА (ДАННЫЕ 2026 ГОДА):
+    {json.dumps(context, ensure_ascii=False)}
+    
+    ИНСТРУКЦИЯ:
+    1. Оцени риск на основе близости к разломам (faults).
+    2. Оцени нагрузку на школы и дефицит воды/электроэнергии в этом районе.
+    3. Выдай вердикт: Одобрено, Требует пересмотра или Отклонено.
+    4. Дай подробные рекомендации по улучшению проекта.
+    
+    ОТВЕТЬ СТРОГО НА РУССКОМ ЯЗЫКЕ В ФОРМАТЕ JSON:
+    {{
+        "verdict": "статус",
+        "score": "индекс безопасности 0-100",
+        "analysis_report": "подробный текст анализа",
+        "recommendations": ["пункт 1", "пункт 2"],
+        "impact_on_infrastructure": "описание влияния на сети"
+    }}
+    """
+
+    try:
+        # 3. Запрос к Gemini
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        # Парсим JSON из ответа ИИ
+        ai_output = json.loads(response.text)
+        
+        return {
+            "status": "success",
+            "data": ai_output
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Ошибка AI анализа: {str(e)}",
+            "fallback_verdict": "Manual Review Required"
+        }
